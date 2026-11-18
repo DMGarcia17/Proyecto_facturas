@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <RootNamespace>Proyecto_facturas</RootNamespace>
+    <AssemblyName>Proyecto_facturas</AssemblyName>
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Data.DataSetExtensions" />
+    <PackageReference Include="ClosedXML" Version="0.102.2" />
+    <PackageReference Include="MySql.Data" Version="8.4.0" />
+    <PackageReference Include="PDFsharp-MigraDoc-gdi" Version="1.50.5147" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Esquema SQL embebido: lo ejecuta el inicializador al arrancar -->
+    <EmbeddedResource Include="sql\*.sql" />
+    <!-- El .env (si existe) se copia junto al ejecutable -->
+    <None Update=".env" CopyToOutputDirectory="PreserveNewest" Condition="Exists('.env')" />
+  </ItemGroup>
+</Project>
