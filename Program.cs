@@ -1,4 +1,6 @@
 using System;
+using System.Globalization;
+using System.Threading;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
 using Proyecto_facturas.Configuracion;
@@ -13,6 +15,7 @@ namespace Proyecto_facturas
         [STAThread]
         static void Main()
         {
+            FijarCulturaUsd();
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
@@ -50,6 +53,22 @@ namespace Proyecto_facturas
                     if (!principal.CerrarSesionSolicitada) return;
                 }
             }
+        }
+
+        // Los importes siempre se muestran en dolares ($1,234.56), sin depender de la region de Windows
+        // (que podria mostrar otro simbolo de moneda). Aplica a tablas, tarjetas, combos y reportes.
+        private static void FijarCulturaUsd()
+        {
+            CultureInfo usd = (CultureInfo)CultureInfo.GetCultureInfo("en-US").Clone();
+            usd.NumberFormat.CurrencySymbol = "$";
+            usd.NumberFormat.CurrencyDecimalDigits = 2;
+            usd.NumberFormat.CurrencyPositivePattern = 0;  // $n
+            usd.NumberFormat.CurrencyNegativePattern = 1;  // -$n
+
+            CultureInfo.DefaultThreadCurrentCulture = usd;
+            CultureInfo.DefaultThreadCurrentUICulture = usd;
+            Thread.CurrentThread.CurrentCulture = usd;
+            Thread.CurrentThread.CurrentUICulture = usd;
         }
 
         private static void MostrarErrorInicio(Exception error)
