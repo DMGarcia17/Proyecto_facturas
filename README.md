@@ -13,7 +13,20 @@ facturas con detalle automático y reporte de ventas en Excel y PDF.
   Cada producto agregado genera un registro en `Detallefactura`. Todo se guarda en una transacción;
   los precios y totales se calculan en el servidor y se descuenta el stock.
 - **Reporte de ventas** por rango de fechas y cliente, con exportación a **Excel** y **PDF**.
-- **Validaciones** centralizadas en `Utilidades/Validador.cs` (ninguna pantalla define reglas propias).
+- **Validaciones** centralizadas en `Utilidades/Validador.cs` y `Utilidades/Reglas.cs` (ninguna pantalla define reglas propias).
+  El error aparece en línea, debajo de cada campo, y se quita solo al corregirlo.
+
+### Diseño
+
+Estilo suave con el lila `#C8A2C8` como color de marca: tarjetas blancas redondeadas con sombra, botones tipo píldora,
+interruptores, tarjetas de resumen en tonos pastel e iconos de línea (Segoe Fluent Icons / MDL2).
+
+- Formularios por **secciones**, con etiquetas, `*` en los campos obligatorios, textos de ayuda, ejemplos (placeholder) y errores en línea.
+- **Maestro-detalle** en Editar/Eliminar (lista a la izquierda, formulario a la derecha) y buscador con contador de registros.
+- **Nueva factura en tres pasos**: ① cliente, ② productos, ③ resumen con totales.
+- **Notificaciones flotantes** para los avisos de éxito; confirmaciones de eliminar y errores graves en diálogos propios.
+- Contraseñas con medidor de fortaleza y requisitos en vivo.
+- Controles propios en `Controles/` (`Tarjeta`, `BotonPildora`, `CampoTexto`, `CampoLista`, `CampoFecha`, `Interruptor`, `Notificacion`, `Dialogo`…).
 
 Atajos: `Ctrl+N` nueva factura · `Ctrl+R` reporte de ventas · `Ctrl+L` cerrar sesión.
 
@@ -56,8 +69,9 @@ Estructura entregada por el docente: `Usuario`, `Producto`, `Cliente`, `Factura`
 
 ```
 Configuracion/   Lector del .env
+Controles/       Controles propios (tarjetas, botones, campos, avisos, diálogos)
 Datos/           Conexión, cargador de BD y acceso a datos
 Formularios/     Login, MDI, CRUD base y pantallas de facturas / reporte
-Utilidades/      Estilo, Validador, Seguridad, exportadores Excel y PDF
+Utilidades/      Estilo, Validador, Reglas, Iconos, Seguridad, exportadores Excel y PDF
 sql/             Esquema de la base de datos
 ```

@@ -4,22 +4,23 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
+using Proyecto_facturas.Controles;
 using Proyecto_facturas.Datos;
 using Proyecto_facturas.Utilidades;
 
 namespace Proyecto_facturas.Formularios
 {
-    // Crea una factura: elige el cliente, agrega productos y al guardar se generan la factura
-    // y su detalle (un registro de Detallefactura por producto) descontando las existencias.
+    // Crea una factura en tres pasos: 1) cliente, 2) productos, 3) resumen. Al generarla se crean la factura
+    // y su detalle (un registro de Detallefactura por producto) y se descuentan las existencias.
     internal class FrmFacturaNueva : Form
     {
         private readonly Validador validador = new Validador();
-        private readonly Validador lineaValidador = new Validador();
-        private readonly ComboBox cboCliente, cboProducto;
-        private readonly TextBox txtCantidad;
+        private readonly Validador lineaValidador = new Validador { AlSalir = false }; // producto y cantidad: solo al pulsar "Agregar"
+        private readonly CampoLista cboCliente, cboProducto;
+        private readonly CampoTexto txtCantidad;
+        private readonly Label lblInfoCliente, lblFecha, lblSubtotal, lblIva, lblTotal;
         private readonly DataGridView dgv;
-        private readonly Label lblSubtotal, lblIva, lblTotal, lblFecha, lblNumero;
-        private readonly Button btnQuitar, btnGuardar;
+        private readonly BotonPildora btnQuitar, btnGuardar;
         private readonly DataTable lineas = new DataTable();
         private DataTable productos;
 
@@ -27,9 +28,8 @@ namespace Proyecto_facturas.Formularios
         {
             Estilo.Hijo(this);
             Text = "Nueva factura";
-            ClientSize = new Size(980, 680);
-            MinimumSize = new Size(980, 680);
-            Estilo.Encabezado(this, "Nueva factura", "Elige el cliente, agrega los productos y genera la factura");
+            ClientSize = new Size(1040, 700);
+            MinimumSize = new Size(900, 620);
 
             lineas.Columns.Add("Idproducto", typeof(int));
             lineas.Columns.Add("Descripcion", typeof(string));
@@ -37,94 +37,117 @@ namespace Proyecto_facturas.Formularios
             lineas.Columns.Add("Precio", typeof(double));
             lineas.Columns.Add("Total", typeof(double));
 
-            // Cliente y datos de la factura
-            Estilo.NuevaEtiqueta(this, "Cliente", 24, 106);
-            cboCliente = Estilo.NuevaCombo(this, 24, 130, 440);
-            Estilo.NuevaEtiqueta(this, "Fecha", 484, 106);
-            lblFecha = new Label { AutoSize = true, Font = Estilo.Normal, Location = new Point(484, 134), Text = DateTime.Now.ToString("dd/MM/yyyy HH:mm") };
-            Controls.Add(lblFecha);
-            Estilo.NuevaEtiqueta(this, "Factura N.º", 700, 106);
-            lblNumero = new Label { AutoSize = true, Font = Estilo.Subtitulo, ForeColor = Estilo.Gris, Location = new Point(700, 132), Text = "se asigna al guardar" };
-            Controls.Add(lblNumero);
+            // ---- 1) Cliente ----
+            cboCliente = new CampoLista { Etiqueta = "Cliente", Obligatorio = true, Ayuda = "A quién se le emite la factura." };
+            lblInfoCliente = new Label { AutoSize = false, Height = 24, ForeColor = Estilo.Gris, Font = Estilo.Pequena, TextAlign = ContentAlignment.MiddleLeft };
+            Tarjeta tarjetaCliente = new Tarjeta { Titulo = "Cliente", Numero = 1, Height = 206 };
+            tarjetaCliente.Controls.Add(Disposicion.Pila(-1, cboCliente, lblInfoCliente));
 
-            // Agregar producto
-            Estilo.NuevaEtiqueta(this, "Producto", 24, 180);
-            cboProducto = Estilo.NuevaCombo(this, 24, 204, 600);
-            Estilo.NuevaEtiqueta(this, "Cantidad", 644, 180);
-            txtCantidad = Estilo.NuevaCaja(this, 644, 204, 110, 9);
-            Button btnAgregar = Estilo.NuevoBoton(this, "Agregar", 774, 196, 130, true);
+            // ---- 2) Productos ----
+            cboProducto = new CampoLista { Etiqueta = "Producto", Obligatorio = true, Ayuda = "Solo con existencias." };
+            txtCantidad = new CampoTexto { Etiqueta = "Cantidad", Obligatorio = true, Placeholder = "1", MaxLength = 9, Ayuda = "Elige un producto." };
+            BotonPildora btnAgregar = new BotonPildora { Text = "Agregar", Icono = Iconos.Agregar, Width = 130 };
             Validador.Filtrar(txtCantidad, Filtro.Digitos);
 
-            // Tabla de lineas
-            dgv = Estilo.NuevaTabla(this, 24, 258, 932, 270);
+            dgv = Estilo.Tabla("Aún no has agregado productos a la factura.");
+            // Las columnas se generan al mostrar la tabla, por eso el formato se aplica al terminar el enlace
+            dgv.DataBindingComplete += (s, e) =>
+            {
+                Estilo.Columna(dgv, "Idproducto", "Id", 18, null, Estilo.Izquierda, 40);
+                Estilo.Columna(dgv, "Descripcion", "Producto", 150, null, Estilo.Izquierda);
+                Estilo.Columna(dgv, "Cantidad", "Cantidad", 40, "N0", Estilo.Derecha);
+                Estilo.Columna(dgv, "Precio", "Precio", 45, "C2", Estilo.Derecha);
+                Estilo.Columna(dgv, "Total", "Total", 50, "C2", Estilo.Derecha);
+            };
             dgv.DataSource = lineas;
-            Estilo.Columna(dgv, "Idproducto", "Id", 20, null, Estilo.Izquierda);
-            Estilo.Columna(dgv, "Descripcion", "Producto", 150, null, Estilo.Izquierda);
-            Estilo.Columna(dgv, "Cantidad", "Cantidad", 40, "N0", Estilo.Derecha);
-            Estilo.Columna(dgv, "Precio", "Precio", 50, "C2", Estilo.Derecha);
-            Estilo.Columna(dgv, "Total", "Total", 55, "C2", Estilo.Derecha);
 
-            // Totales
-            Panel totales = new Panel { Size = new Size(300, 96), BackColor = Color.White, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
-            totales.Location = new Point(ClientSize.Width - 24 - 300, 538);
-            lblSubtotal = FilaTotal(totales, "Subtotal", 8, false);
-            lblIva = FilaTotal(totales, "IVA (" + Conexion.IvaPorcentaje.ToString("0.##") + "%)", 34, false);
-            lblTotal = FilaTotal(totales, "Total", 62, true);
-            Controls.Add(totales);
+            btnQuitar = new BotonPildora { Text = "Quitar producto", Icono = Iconos.Eliminar, Variante = Variante.Secundario, Width = 180, Enabled = false, CausesValidation = false };
+            Panel filaQuitar = new Panel { Height = 56, Padding = new Padding(0, 12, 0, 0) };
+            btnQuitar.Location = new Point(0, 12);
+            filaQuitar.Controls.Add(btnQuitar);
 
-            btnQuitar = Estilo.NuevoBoton(this, "Quitar producto", 24, 546, 160, false);
-            btnQuitar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            btnQuitar.Enabled = false;
-            btnGuardar = Estilo.NuevoBoton(this, "Generar factura", 24, 594, 180, true);
-            btnGuardar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            Button btnLimpiar = Estilo.NuevoBoton(this, "Limpiar", 214, 594, 110, false);
-            btnLimpiar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            btnLimpiar.CausesValidation = false;
+            Control filaAgregar = Disposicion.Fila(new float[] { 100, -170, -140 }, cboProducto, txtCantidad, Disposicion.AlineadoACampo(btnAgregar));
+            Tarjeta tarjetaProductos = new Tarjeta { Titulo = "Productos", Numero = 2 };
+            tarjetaProductos.Controls.Add(Disposicion.Pila(1, filaAgregar, dgv, filaQuitar));
 
-            // Reglas de validacion (todas del helper)
+            TableLayoutPanel izquierda = Disposicion.Pila(1, tarjetaCliente, tarjetaProductos);
+
+            // ---- 3) Resumen ----
+            Tarjeta tarjetaResumen = new Tarjeta { Titulo = "Resumen", Numero = 3, Dock = DockStyle.Fill };
+            lblFecha = new Label(); lblSubtotal = new Label(); lblIva = new Label(); lblTotal = new Label();
+            Panel spacer = new Panel { BackColor = Color.White };
+            btnGuardar = new BotonPildora { Text = "Generar factura", Icono = Iconos.Check, Variante = Variante.Exito, Height = 46, Margin = new Padding(0, 0, 0, 8) };
+            BotonPildora btnLimpiar = new BotonPildora { Text = "Limpiar todo", Icono = Iconos.Limpiar, Variante = Variante.Secundario, Height = 42, CausesValidation = false };
+            tarjetaResumen.Controls.Add(Disposicion.Pila(7,
+                Linea("Fecha", lblFecha, false), Linea("Factura N.º", new Label { Text = "se asigna al guardar" }, false), Separador(),
+                Linea("Subtotal", lblSubtotal, false), Linea("IVA (" + Conexion.IvaPorcentaje.ToString("0.##") + "%)", lblIva, false), Separador(),
+                Linea("Total a pagar", lblTotal, true), spacer, btnGuardar, btnLimpiar));
+
+            TableLayoutPanel cuerpo = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill, Padding = new Padding(16, 0, 16, 12), ColumnCount = 2, RowCount = 1
+            };
+            cuerpo.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            cuerpo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 64));
+            cuerpo.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36));
+            cuerpo.Controls.Add(izquierda, 0, 0);
+            cuerpo.Controls.Add(tarjetaResumen, 1, 0);
+            Controls.Add(Disposicion.Pila(1, Estilo.Encabezado(Iconos.Factura, "Nueva factura", "Elige el cliente, agrega los productos y genera la factura."), cuerpo));
+
+            // ---- Reglas de validacion (todas del helper) ----
             validador.Agregar(cboCliente, "un cliente");
-            lineaValidador.AlSalir = false; // el producto y la cantidad se validan solo al pulsar "Agregar"
             lineaValidador.Agregar(cboProducto, "un producto");
             lineaValidador.Agregar(txtCantidad, Reglas.Entero("la cantidad", 1, StockDisponible));
 
+            cboCliente.ValorCambiado += (s, e) => MostrarInfoCliente();
+            cboProducto.ValorCambiado += (s, e) => ActualizarAyudaCantidad();
             btnAgregar.Click += btnAgregar_Click;
             btnQuitar.Click += btnQuitar_Click;
             btnGuardar.Click += btnGuardar_Click;
             btnLimpiar.Click += (s, e) => Reiniciar();
             dgv.SelectionChanged += (s, e) => btnQuitar.Enabled = dgv.SelectedRows.Count > 0;
             AcceptButton = btnAgregar;
+
+            lblFecha.Text = DateTime.Now.ToString("dd/MM/yyyy HH:mm");
+            Recalcular();
         }
 
-        private Label FilaTotal(Panel padre, string titulo, int y, bool grande)
+        // Fila "titulo ........ valor" del resumen
+        private static Panel Linea(string titulo, Label valor, bool grande)
         {
-            padre.Controls.Add(new Label
+            Panel p = new Panel { Height = grande ? 56 : 36, BackColor = Color.White };
+            Label t = new Label
             {
-                AutoSize = true, Text = titulo, Location = new Point(14, y + (grande ? 4 : 2)),
-                Font = grande ? Estilo.Subtitulo : Estilo.Normal, ForeColor = grande ? Estilo.Texto : Estilo.Gris
-            });
-            Label valor = new Label
-            {
-                AutoSize = false, TextAlign = ContentAlignment.MiddleRight, Text = 0.ToString("C2"),
-                Location = new Point(110, y), Size = new Size(176, 26),
-                Font = grande ? new Font("Segoe UI Semibold", 14F) : Estilo.Normal,
-                ForeColor = grande ? Estilo.Primario : Estilo.Texto
+                Text = titulo, AutoSize = true, Dock = DockStyle.Left, TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = grande ? Estilo.Texto : Estilo.Gris, Font = grande ? Estilo.Subtitulo : Estilo.Normal
             };
-            padre.Controls.Add(valor);
-            return valor;
+            valor.AutoSize = true;
+            valor.Dock = DockStyle.Right;
+            valor.TextAlign = ContentAlignment.MiddleRight;
+            valor.ForeColor = grande ? Estilo.Primario : Estilo.Texto;
+            valor.Font = grande ? new Font("Segoe UI Semibold", 18F) : Estilo.Normal;
+            p.Controls.Add(valor);
+            p.Controls.Add(t);
+            return p;
+        }
+
+        private static Panel Separador()
+        {
+            return new Panel { Height = 1, BackColor = Estilo.Borde, Margin = new Padding(0, 6, 0, 6) };
         }
 
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             CargarCatalogos();
+            cboCliente.Interior.Focus();
         }
 
         private void CargarCatalogos()
         {
             try
             {
-                DataTable clientes = ClienteDatos.Nombres();
-                cboCliente.DataSource = clientes;
+                cboCliente.DataSource = ClienteDatos.Listar("");
                 cboCliente.DisplayMember = "Nombre";
                 cboCliente.ValueMember = "Nombre";
                 cboCliente.SelectedIndex = -1;
@@ -134,11 +157,26 @@ namespace Proyecto_facturas.Formularios
                 cboProducto.DisplayMember = "Texto";
                 cboProducto.ValueMember = "Idproducto";
                 cboProducto.SelectedIndex = -1;
+                MostrarInfoCliente();
+                ActualizarAyudaCantidad();
             }
             catch (MySqlException ex)
             {
                 Estilo.ErrorBD(this, ex);
             }
+        }
+
+        private void MostrarInfoCliente()
+        {
+            DataRowView c = cboCliente.SelectedItem as DataRowView;
+            if (c == null) { lblInfoCliente.Text = ""; return; }
+            string correo = c["Email"] == DBNull.Value ? "sin correo" : (string)c["Email"];
+            lblInfoCliente.Text = "Tel. " + c["Telefono"] + "   ·   " + correo;
+        }
+
+        private void ActualizarAyudaCantidad()
+        {
+            txtCantidad.Ayuda = cboProducto.SelectedIndex < 0 ? "Elige un producto." : "Disponibles: " + StockDisponible().ToString("N0");
         }
 
         // Existencias del producto elegido menos lo ya agregado a la factura
@@ -152,7 +190,8 @@ namespace Proyecto_facturas.Formularios
 
         private void btnAgregar_Click(object sender, EventArgs e)
         {
-            bool ok = lineaValidador.Validar(cboProducto) & lineaValidador.Validar(txtCantidad);
+            bool ok = lineaValidador.Validar(cboProducto);
+            ok = ok & lineaValidador.Validar(txtCantidad);
             if (!ok) return;
 
             DataRowView p = (DataRowView)cboProducto.SelectedItem;
@@ -171,10 +210,10 @@ namespace Proyecto_facturas.Formularios
                 lineas.Rows.Add(id, p["Descripcion"], cantidad, precio, Redondear(precio * cantidad));
             }
 
-            txtCantidad.Clear();
+            txtCantidad.Text = "";
             cboProducto.SelectedIndex = -1;
             lineaValidador.Limpiar();
-            cboProducto.Focus();
+            cboProducto.Interior.Focus();
             Recalcular();
         }
 
@@ -186,6 +225,7 @@ namespace Proyecto_facturas.Formularios
             fila.Row.Delete();
             lineas.AcceptChanges();
             Recalcular();
+            ActualizarAyudaCantidad();
         }
 
         private void Recalcular()
@@ -204,19 +244,20 @@ namespace Proyecto_facturas.Formularios
 
         private void btnGuardar_Click(object sender, EventArgs e)
         {
-            if (!validador.Validar(cboCliente))
+            if (!validador.ValidarTodo())
             {
-                Estilo.Aviso(this, "Selecciona el cliente de la factura.", "Datos incompletos");
+                Estilo.Aviso(this, "Selecciona el cliente de la factura.", "Falta el cliente");
                 return;
             }
             if (lineas.Rows.Count == 0)
             {
-                Estilo.Aviso(this, "Agrega al menos un producto a la factura.", "Datos incompletos");
-                cboProducto.Focus();
+                Estilo.Aviso(this, "Agrega al menos un producto a la factura.", "Factura vacía");
+                cboProducto.Interior.Focus();
                 return;
             }
 
-            if (!Estilo.Confirmar(this, "¿Generar la factura para " + cboCliente.Text + " por " + lblTotal.Text + "?", "Confirmar factura"))
+            if (!Estilo.Confirmar(this, "Se generará la factura para " + cboCliente.Text + " por " + lblTotal.Text + ".",
+                    "¿Generar la factura?", "Sí, generar"))
                 return;
 
             try
@@ -235,7 +276,7 @@ namespace Proyecto_facturas.Formularios
                     return;
                 }
 
-                Estilo.Info(this, "La factura N.º " + idFactura + " se generó correctamente.\nTotal: " + lblTotal.Text, "Factura generada");
+                Estilo.Exito(this, "La factura N.º " + idFactura + " se generó por " + lblTotal.Text + ".", "Factura generada");
                 Reiniciar();
             }
             catch (MySqlException ex)
@@ -248,13 +289,13 @@ namespace Proyecto_facturas.Formularios
         private void Reiniciar()
         {
             lineas.Clear();
-            txtCantidad.Clear();
+            txtCantidad.Text = "";
             lblFecha.Text = DateTime.Now.ToString("dd/MM/yyyy HH:mm");
             Recalcular();
             CargarCatalogos();
             validador.Limpiar();
             lineaValidador.Limpiar();
-            cboCliente.Focus();
+            cboCliente.Interior.Focus();
         }
     }
 }

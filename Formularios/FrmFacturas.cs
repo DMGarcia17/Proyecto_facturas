@@ -3,6 +3,7 @@ using System.Data;
 using System.Drawing;
 using System.Windows.Forms;
 using MySql.Data.MySqlClient;
+using Proyecto_facturas.Controles;
 using Proyecto_facturas.Datos;
 using Proyecto_facturas.Utilidades;
 
@@ -13,66 +14,85 @@ namespace Proyecto_facturas.Formularios
     {
         private readonly Modo modo;
         private readonly Validador validador = new Validador();
-        private readonly DateTimePicker dtpDesde, dtpHasta;
-        private readonly TextBox txtBuscar;
+        private readonly CampoFecha dtpDesde, dtpHasta;
+        private readonly CampoTexto txtBuscar;
         private readonly DataGridView dgvFacturas, dgvDetalle;
-        private readonly Button btnEliminar;
-        private readonly Label lblDetalle;
+        private readonly BotonPildora btnEliminar;
+        private readonly Tarjeta tarjetaDetalle;
+        private readonly Label lblContador;
 
         public FrmFacturas(Modo modo)
         {
             this.modo = modo;
+            bool eliminar = modo == Modo.Eliminar;
             Estilo.Hijo(this);
-            string titulo = modo == Modo.Eliminar ? "Eliminar factura" : "Consultar facturas";
+            string titulo = eliminar ? "Eliminar factura" : "Consultar facturas";
             Text = titulo;
-            ClientSize = new Size(980, 680);
-            MinimumSize = new Size(980, 680);
-            Estilo.Encabezado(this, titulo, modo == Modo.Eliminar
-                ? "Selecciona una factura y elimínala; sus productos regresan al inventario"
-                : "Filtra por fechas, cliente o número y revisa el detalle de cada factura");
+            ClientSize = new Size(1040, 700);
+            MinimumSize = new Size(900, 600);
 
-            Estilo.NuevaEtiqueta(this, "Desde", 24, 106);
-            dtpDesde = Estilo.NuevaFecha(this, 24, 130, 150);
+            // Filtros
+            dtpDesde = new CampoFecha { Etiqueta = "Desde", Ayuda = "Fecha inicial." };
             dtpDesde.Value = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-            Estilo.NuevaEtiqueta(this, "Hasta", 194, 106);
-            dtpHasta = Estilo.NuevaFecha(this, 194, 130, 150);
+            dtpHasta = new CampoFecha { Etiqueta = "Hasta", Ayuda = "Fecha final (incluida)." };
             dtpHasta.Value = DateTime.Today;
-            Estilo.NuevaEtiqueta(this, "Cliente o N.º de factura", 364, 106);
-            txtBuscar = Estilo.NuevaCaja(this, 364, 130, 300, 100);
-            Button btnBuscar = Estilo.NuevoBoton(this, "Buscar", 684, 122, 120, true);
-            Button btnTodas = Estilo.NuevoBoton(this, "Limpiar", 814, 122, 120, false);
-            btnTodas.CausesValidation = false;
+            txtBuscar = new CampoTexto { Etiqueta = "Cliente o N.º de factura", Placeholder = "Buscar...", Icono = Iconos.Buscar, Ayuda = "Opcional.", MaxLength = 100 };
+            BotonPildora btnBuscar = new BotonPildora { Text = "Buscar", Icono = Iconos.Buscar, Width = 130 };
+            BotonPildora btnLimpiar = new BotonPildora { Text = "Limpiar", Variante = Variante.Secundario, Width = 120, CausesValidation = false };
+            Tarjeta filtros = new Tarjeta { Height = 134 };
+            filtros.Controls.Add(Disposicion.Fila(new float[] { -170, -170, 100, -130, -120 }, dtpDesde, dtpHasta, txtBuscar,
+                Disposicion.AlineadoACampo(btnBuscar), Disposicion.AlineadoACampo(btnLimpiar)));
             AcceptButton = btnBuscar;
-
             validador.AgregarRango(dtpDesde, dtpHasta);
 
-            Label l1 = Estilo.NuevaEtiqueta(this, "Facturas", 24, 178);
-            l1.Font = Estilo.Subtitulo;
-            dgvFacturas = Estilo.NuevaTabla(this, 24, 206, 932, 260);
-            dgvFacturas.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-
-            lblDetalle = Estilo.NuevaEtiqueta(this, "Detalle de la factura", 24, 478);
-            lblDetalle.Font = Estilo.Subtitulo;
-            lblDetalle.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-            int altoDetalle = modo == Modo.Eliminar ? 110 : 150;
-            dgvDetalle = Estilo.NuevaTabla(this, 24, 506, 932, altoDetalle);
-            dgvDetalle.Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right;
-
-            if (modo == Modo.Eliminar)
+            // Facturas
+            dgvFacturas = Estilo.Tabla("No hay facturas en el rango seleccionado.");
+            lblContador = new Label { AutoSize = false, Dock = DockStyle.Right, Width = 130, TextAlign = ContentAlignment.MiddleRight, ForeColor = Estilo.Gris, Font = Estilo.Pequena };
+            Tarjeta tarjetaFacturas = new Tarjeta { Titulo = "Facturas", Icono = Iconos.Factura };
+            if (eliminar)
             {
-                btnEliminar = Estilo.NuevoBoton(this, "Eliminar factura", 24, 628, 170, false);
-                Estilo.BotonPeligro(btnEliminar);
-                btnEliminar.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
-                btnEliminar.Enabled = false;
+                btnEliminar = new BotonPildora { Text = "Eliminar factura", Icono = Iconos.Eliminar, Variante = Variante.Peligro, Width = 200, Enabled = false };
                 btnEliminar.Click += btnEliminar_Click;
+                FlowLayoutPanel acciones = new FlowLayoutPanel { Height = 58, WrapContents = false, Padding = new Padding(0, 10, 0, 0) };
+                acciones.Controls.Add(btnEliminar);
+                Label aviso = new Label
+                {
+                    AutoSize = true, ForeColor = Estilo.ErrorTexto, Font = Estilo.Pequena, Margin = new Padding(12, 14, 0, 0),
+                    Text = "Se borrará su detalle y los productos volverán al inventario."
+                };
+                acciones.Controls.Add(aviso);
+                tarjetaFacturas.Controls.Add(Disposicion.Pila(0, dgvFacturas, acciones));
+            }
+            else
+            {
+                tarjetaFacturas.Controls.Add(dgvFacturas);
             }
 
+            // Detalle
+            dgvDetalle = Estilo.Tabla("Selecciona una factura para ver su detalle.");
+            tarjetaDetalle = new Tarjeta { Titulo = "Detalle de la factura", Icono = Iconos.Etiqueta };
+            tarjetaDetalle.Controls.Add(dgvDetalle);
+
+            TableLayoutPanel tablas = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 1, RowCount = 2 };
+            tablas.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            tablas.RowStyles.Add(new RowStyle(SizeType.Percent, eliminar ? 62 : 50));
+            tablas.RowStyles.Add(new RowStyle(SizeType.Percent, eliminar ? 38 : 50));
+            tarjetaFacturas.Dock = tarjetaDetalle.Dock = DockStyle.Fill;
+            tablas.Controls.Add(tarjetaFacturas, 0, 0);
+            tablas.Controls.Add(tarjetaDetalle, 0, 1);
+
+            Panel cuerpo = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 0, 16, 12) };
+            cuerpo.Controls.Add(Disposicion.Pila(1, filtros, tablas));
+            Controls.Add(Disposicion.Pila(1, Estilo.Encabezado(Iconos.Factura, titulo,
+                eliminar ? "Elige una factura y elimínala; sus productos regresan al inventario."
+                         : "Filtra por fechas, cliente o número y revisa el detalle de cada factura."), cuerpo));
+
             btnBuscar.Click += (s, e) => Cargar();
-            btnTodas.Click += (s, e) =>
+            btnLimpiar.Click += (s, e) =>
             {
                 dtpDesde.Value = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
                 dtpHasta.Value = DateTime.Today;
-                txtBuscar.Clear();
+                txtBuscar.Text = "";
                 validador.Limpiar();
                 Cargar();
             };
@@ -89,17 +109,17 @@ namespace Proyecto_facturas.Formularios
         {
             if (!validador.ValidarTodo())
             {
-                Estilo.Aviso(this, "Corrige el rango de fechas.", "Datos incompletos");
+                Estilo.Aviso(this, "Corrige el rango de fechas para continuar.", "Rango inválido");
                 return;
             }
 
             try
             {
                 dgvFacturas.DataSource = FacturaDatos.Listar(dtpDesde.Value, dtpHasta.Value, txtBuscar.Text);
-                Estilo.Columna(dgvFacturas, "Idfactura", "N.º", 25, null, Estilo.Izquierda);
+                Estilo.Columna(dgvFacturas, "Idfactura", "N.º", 22, null, Estilo.Izquierda);
                 Estilo.Columna(dgvFacturas, "Cliente", "Cliente", 110, null, Estilo.Izquierda);
-                Estilo.Columna(dgvFacturas, "Fecha", "Fecha", 60, "dd/MM/yyyy HH:mm", Estilo.Izquierda);
-                Estilo.Columna(dgvFacturas, "Articulos", "Artículos", 35, "N0", Estilo.Derecha);
+                Estilo.Columna(dgvFacturas, "Fecha", "Fecha", 62, "dd/MM/yyyy HH:mm", Estilo.Izquierda);
+                Estilo.Columna(dgvFacturas, "Articulos", "Artículos", 36, "N0", Estilo.Derecha);
                 Estilo.Columna(dgvFacturas, "Subtotal", "Subtotal", 45, "C2", Estilo.Derecha);
                 Estilo.Columna(dgvFacturas, "IVA", "IVA", 40, "C2", Estilo.Derecha);
                 Estilo.Columna(dgvFacturas, "Total", "Total", 45, "C2", Estilo.Derecha);
@@ -125,15 +145,15 @@ namespace Proyecto_facturas.Formularios
             if (!id.HasValue)
             {
                 dgvDetalle.DataSource = null;
-                lblDetalle.Text = "Detalle de la factura";
+                tarjetaDetalle.Titulo = "Detalle de la factura";
                 return;
             }
 
             try
             {
-                lblDetalle.Text = "Detalle de la factura N.º " + id.Value;
+                tarjetaDetalle.Titulo = "Detalle de la factura N.º " + id.Value;
                 dgvDetalle.DataSource = FacturaDatos.Detalle(id.Value);
-                Estilo.Columna(dgvDetalle, "Iddetalle", "Id", 20, null, Estilo.Izquierda);
+                Estilo.Columna(dgvDetalle, "Iddetalle", "Id", 18, null, Estilo.Izquierda, 40);
                 Estilo.Columna(dgvDetalle, "Descripcion", "Producto", 150, null, Estilo.Izquierda);
                 Estilo.Columna(dgvDetalle, "cantidad", "Cantidad", 40, "N0", Estilo.Derecha);
                 Estilo.Columna(dgvDetalle, "Precio", "Precio", 50, "C2", Estilo.Derecha);
@@ -150,9 +170,8 @@ namespace Proyecto_facturas.Formularios
             int? id = FacturaSeleccionada();
             if (!id.HasValue) return;
 
-            if (!Estilo.Confirmar(this, "¿Seguro que quieres eliminar la factura N.º " + id.Value + "?\n" +
-                "Se borrará su detalle y los productos regresarán al inventario.\nEsta acción no se puede deshacer.",
-                "Confirmar eliminación"))
+            if (!Estilo.Confirmar(this, "Se borrará el detalle de la factura N.º " + id.Value + " y los productos regresarán al inventario.\nEsta acción no se puede deshacer.",
+                    "¿Eliminar la factura?", "Sí, eliminar", true))
                 return;
 
             try
@@ -163,7 +182,7 @@ namespace Proyecto_facturas.Formularios
                     Estilo.Aviso(this, error, "No se pudo eliminar");
                     return;
                 }
-                Estilo.Info(this, "La factura se eliminó y las existencias fueron restituidas.", "Factura eliminada");
+                Estilo.Exito(this, "La factura se eliminó y las existencias fueron restituidas.", "Factura eliminada");
                 Cargar();
             }
             catch (MySqlException ex)

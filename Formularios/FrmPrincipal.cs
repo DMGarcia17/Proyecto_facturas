@@ -1,24 +1,28 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows.Forms;
+using Proyecto_facturas.Controles;
 using Proyecto_facturas.Datos;
 using Proyecto_facturas.Utilidades;
 
 namespace Proyecto_facturas.Formularios
 {
-    // Contenedor MDI con menu desplegable (Productos, Clientes, Facturas, Usuarios, Ventana, Sesion).
+    // Contenedor MDI con menu desplegable (Productos, Clientes, Facturas, Usuarios, Ventana, Sesion) y accesos rapidos.
     // Cada opcion abre su pantalla como ventana hija; si ya esta abierta, solo la trae al frente.
     internal class FrmPrincipal : Form
     {
         private readonly MenuStrip menu = new MenuStrip();
-        private readonly ToolStripStatusLabel lblUsuario = new ToolStripStatusLabel();
         private readonly ToolStripStatusLabel lblReloj = new ToolStripStatusLabel();
         private readonly Timer reloj = new Timer { Interval = 15000 };
         private readonly Dictionary<string, Form> abiertas = new Dictionary<string, Form>();
         private MdiClient cliente;
         private bool cerrandoSesion;
+        private string cifraProductos = "-", cifraClientes = "-", cifraFacturasHoy = "-";
 
         // True si el usuario pidio cerrar sesion (Program vuelve a mostrar el login)
         public bool CerrarSesionSolicitada { get { return cerrandoSesion; } }
@@ -32,60 +36,61 @@ namespace Proyecto_facturas.Formularios
             MinimumSize = new Size(1000, 700);
             WindowState = FormWindowState.Maximized;
 
+            Controls.Add(ConstruirBarraEstado());
+            Controls.Add(ConstruirAccesosRapidos());
             ConstruirMenu();
-            ConstruirBarraEstado();
             ConstruirBienvenida();
 
-            MdiChildActivate += (s, e) => ActualizarBienvenida();
+            MdiChildActivate += (s, e) => cliente?.Invalidate();
             FormClosing += FrmPrincipal_FormClosing;
             FormClosed += (s, e) => reloj.Dispose();
         }
 
-        // ---------- Menu ----------
+        // ---------- Menu desplegable ----------
         private void ConstruirMenu()
         {
-            menu.Renderer = new MenuRenderer();
-            menu.BackColor = Estilo.Primario;
-            menu.ForeColor = Color.White;
+            menu.Renderer = new RenderizadorSuave();
+            menu.BackColor = Color.White;
             menu.Font = new Font("Segoe UI", 10F);
-            menu.Padding = new Padding(8, 4, 0, 4);
+            menu.Padding = new Padding(10, 6, 10, 6);
+            menu.ImageScalingSize = new Size(18, 18);
 
             menu.Items.Add(Raiz("&Productos",
-                Opcion("&Nuevo producto", () => Abrir("prod-nuevo", () => new FrmProductos(Modo.Nuevo))),
-                Opcion("&Consultar productos", () => Abrir("prod-consultar", () => new FrmProductos(Modo.Consultar))),
-                Opcion("&Editar producto", () => Abrir("prod-editar", () => new FrmProductos(Modo.Editar))),
-                Opcion("E&liminar producto", () => Abrir("prod-eliminar", () => new FrmProductos(Modo.Eliminar)))));
+                Opcion("&Nuevo producto", Iconos.Agregar, () => Abrir("prod-nuevo", () => new FrmProductos(Modo.Nuevo))),
+                Opcion("&Consultar productos", Iconos.Buscar, () => Abrir("prod-consultar", () => new FrmProductos(Modo.Consultar))),
+                Opcion("&Editar producto", Iconos.Editar, () => Abrir("prod-editar", () => new FrmProductos(Modo.Editar))),
+                Opcion("E&liminar producto", Iconos.Eliminar, () => Abrir("prod-eliminar", () => new FrmProductos(Modo.Eliminar)))));
 
             menu.Items.Add(Raiz("&Clientes",
-                Opcion("&Nuevo cliente", () => Abrir("cli-nuevo", () => new FrmClientes(Modo.Nuevo))),
-                Opcion("&Consultar clientes", () => Abrir("cli-consultar", () => new FrmClientes(Modo.Consultar))),
-                Opcion("&Editar cliente", () => Abrir("cli-editar", () => new FrmClientes(Modo.Editar))),
-                Opcion("E&liminar cliente", () => Abrir("cli-eliminar", () => new FrmClientes(Modo.Eliminar)))));
+                Opcion("&Nuevo cliente", Iconos.Agregar, () => Abrir("cli-nuevo", () => new FrmClientes(Modo.Nuevo))),
+                Opcion("&Consultar clientes", Iconos.Buscar, () => Abrir("cli-consultar", () => new FrmClientes(Modo.Consultar))),
+                Opcion("&Editar cliente", Iconos.Editar, () => Abrir("cli-editar", () => new FrmClientes(Modo.Editar))),
+                Opcion("E&liminar cliente", Iconos.Eliminar, () => Abrir("cli-eliminar", () => new FrmClientes(Modo.Eliminar)))));
 
             menu.Items.Add(Raiz("&Facturas",
-                Opcion("&Nueva factura", () => Abrir("fac-nueva", () => new FrmFacturaNueva()), Keys.Control | Keys.N),
-                Opcion("&Consultar facturas", () => Abrir("fac-consultar", () => new FrmFacturas(Modo.Consultar))),
-                Opcion("E&liminar factura", () => Abrir("fac-eliminar", () => new FrmFacturas(Modo.Eliminar))),
+                Opcion("&Nueva factura", Iconos.Agregar, () => Abrir("fac-nueva", () => new FrmFacturaNueva()), Keys.Control | Keys.N),
+                Opcion("&Consultar facturas", Iconos.Buscar, () => Abrir("fac-consultar", () => new FrmFacturas(Modo.Consultar))),
+                Opcion("E&liminar factura", Iconos.Eliminar, () => Abrir("fac-eliminar", () => new FrmFacturas(Modo.Eliminar))),
                 new ToolStripSeparator(),
-                Opcion("&Reporte de ventas…", () => Abrir("fac-reporte", () => new FrmReporteVentas()), Keys.Control | Keys.R)));
+                Opcion("&Reporte de ventas…", Iconos.Reporte, () => Abrir("fac-reporte", () => new FrmReporteVentas()), Keys.Control | Keys.R)));
 
             menu.Items.Add(Raiz("&Usuarios",
-                Opcion("&Nuevo usuario", () => Abrir("usu-nuevo", () => new FrmUsuarios(Modo.Nuevo))),
-                Opcion("&Consultar usuarios", () => Abrir("usu-consultar", () => new FrmUsuarios(Modo.Consultar))),
-                Opcion("&Editar usuario", () => Abrir("usu-editar", () => new FrmUsuarios(Modo.Editar))),
-                Opcion("E&liminar usuario", () => Abrir("usu-eliminar", () => new FrmUsuarios(Modo.Eliminar)))));
+                Opcion("&Nuevo usuario", Iconos.Agregar, () => Abrir("usu-nuevo", () => new FrmUsuarios(Modo.Nuevo))),
+                Opcion("&Consultar usuarios", Iconos.Buscar, () => Abrir("usu-consultar", () => new FrmUsuarios(Modo.Consultar))),
+                Opcion("&Editar usuario", Iconos.Editar, () => Abrir("usu-editar", () => new FrmUsuarios(Modo.Editar))),
+                Opcion("E&liminar usuario", Iconos.Eliminar, () => Abrir("usu-eliminar", () => new FrmUsuarios(Modo.Eliminar)))));
 
             menu.Items.Add(Raiz("&Ventana",
-                Opcion("&Cascada", () => LayoutMdi(MdiLayout.Cascade)),
-                Opcion("Mosaico &horizontal", () => LayoutMdi(MdiLayout.TileHorizontal)),
-                Opcion("Mosaico &vertical", () => LayoutMdi(MdiLayout.TileVertical)),
+                Opcion("&Cascada", Iconos.Etiqueta, () => LayoutMdi(MdiLayout.Cascade)),
+                Opcion("Mosaico &horizontal", Iconos.Etiqueta, () => LayoutMdi(MdiLayout.TileHorizontal)),
+                Opcion("Mosaico &vertical", Iconos.Etiqueta, () => LayoutMdi(MdiLayout.TileVertical)),
                 new ToolStripSeparator(),
-                Opcion("Cerrar &todas", CerrarTodas)));
+                Opcion("Cerrar &todas", Iconos.Cerrar, CerrarTodas)));
 
             ToolStripMenuItem sesion = Raiz("&Sesión",
-                Opcion("&Cerrar sesión", CerrarSesion, Keys.Control | Keys.L),
+                Opcion("&Cerrar sesión", Iconos.Usuario, CerrarSesion, Keys.Control | Keys.L),
                 new ToolStripSeparator(),
-                Opcion("&Salir", Close, Keys.None, "Alt+F4"));
+                Opcion("&Salir", Iconos.Salir, Close, Keys.None, "Alt+F4"));
             sesion.Alignment = ToolStripItemAlignment.Right;
             menu.Items.Add(sesion);
 
@@ -95,16 +100,17 @@ namespace Proyecto_facturas.Formularios
 
         private static ToolStripMenuItem Raiz(string texto, params ToolStripItem[] hijos)
         {
-            ToolStripMenuItem raiz = new ToolStripMenuItem(texto) { ForeColor = Color.White, Padding = new Padding(10, 2, 10, 2) };
+            ToolStripMenuItem raiz = new ToolStripMenuItem(texto) { ForeColor = Estilo.Texto, Padding = new Padding(12, 3, 12, 3) };
             raiz.DropDownItems.AddRange(hijos);
             return raiz;
         }
 
-        private static ToolStripMenuItem Opcion(string texto, Action accion, Keys atajo = Keys.None, string textoAtajo = null)
+        private static ToolStripMenuItem Opcion(string texto, string icono, Action accion, Keys atajo = Keys.None, string textoAtajo = null)
         {
             ToolStripMenuItem item = new ToolStripMenuItem(texto)
             {
-                ForeColor = Estilo.Texto, BackColor = Color.White, Padding = new Padding(2, 5, 2, 5)
+                ForeColor = Estilo.Texto, BackColor = Color.White, Padding = new Padding(2, 6, 2, 6),
+                Image = Iconos.Imagen(icono, 18, Estilo.Primario)
             };
             if (atajo != Keys.None) item.ShortcutKeys = atajo;
             if (textoAtajo != null) item.ShortcutKeyDisplayString = textoAtajo;
@@ -112,23 +118,48 @@ namespace Proyecto_facturas.Formularios
             return item;
         }
 
-        // ---------- Barra de estado ----------
-        private void ConstruirBarraEstado()
+        // ---------- Accesos rapidos ----------
+        private Control ConstruirAccesosRapidos()
         {
-            StatusStrip barra = new StatusStrip { BackColor = Color.White, SizingGrip = false };
-            lblUsuario.Text = "Usuario: " + Sesion.NombreCompleto + " (" + Sesion.Nombre + ")";
-            lblUsuario.ForeColor = Estilo.Texto;
+            FlowLayoutPanel barra = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Top, Height = 62, BackColor = Estilo.Fondo, Padding = new Padding(18, 11, 18, 0), WrapContents = false
+            };
+            barra.Controls.Add(Rapido("Nueva factura", Iconos.Agregar, Variante.Primario, 168, () => Abrir("fac-nueva", () => new FrmFacturaNueva())));
+            barra.Controls.Add(Rapido("Facturas", Iconos.Factura, Variante.Secundario, 130, () => Abrir("fac-consultar", () => new FrmFacturas(Modo.Consultar))));
+            barra.Controls.Add(Rapido("Clientes", Iconos.Clientes, Variante.Secundario, 130, () => Abrir("cli-consultar", () => new FrmClientes(Modo.Consultar))));
+            barra.Controls.Add(Rapido("Productos", Iconos.Productos, Variante.Secundario, 136, () => Abrir("prod-consultar", () => new FrmProductos(Modo.Consultar))));
+            barra.Controls.Add(Rapido("Reporte de ventas", Iconos.Reporte, Variante.Secundario, 176, () => Abrir("fac-reporte", () => new FrmReporteVentas())));
+            return barra;
+        }
+
+        private static BotonPildora Rapido(string texto, string icono, Variante variante, int ancho, Action accion)
+        {
+            BotonPildora b = new BotonPildora { Text = texto, Icono = icono, Variante = variante, Size = new Size(ancho, 38), Margin = new Padding(0, 0, 10, 0) };
+            b.Click += (s, e) => accion();
+            return b;
+        }
+
+        // ---------- Barra de estado ----------
+        private Control ConstruirBarraEstado()
+        {
+            StatusStrip barra = new StatusStrip { BackColor = Color.White, SizingGrip = false, Padding = new Padding(10, 4, 10, 4) };
+            ToolStripStatusLabel lblUsuario = new ToolStripStatusLabel
+            {
+                Text = "Usuario: " + Sesion.NombreCompleto + " (" + Sesion.Nombre + ")", ForeColor = Estilo.Texto,
+                Image = Iconos.Imagen(Iconos.Usuario, 16, Estilo.Primario), ImageAlign = ContentAlignment.MiddleLeft, TextImageRelation = TextImageRelation.ImageBeforeText
+            };
             ToolStripStatusLabel lblBd = new ToolStripStatusLabel
             {
                 Text = "Base de datos: " + Conexion.NombreBD, ForeColor = Estilo.Gris, Spring = true, TextAlign = ContentAlignment.MiddleRight
             };
             lblReloj.ForeColor = Estilo.Gris;
             barra.Items.AddRange(new ToolStripItem[] { lblUsuario, lblBd, lblReloj });
-            Controls.Add(barra);
 
             ActualizarReloj();
             reloj.Tick += (s, e) => ActualizarReloj();
             reloj.Start();
+            return barra;
         }
 
         private void ActualizarReloj()
@@ -136,35 +167,78 @@ namespace Proyecto_facturas.Formularios
             lblReloj.Text = DateTime.Now.ToString("dd/MM/yyyy  HH:mm");
         }
 
-        // ---------- Fondo de bienvenida ----------
+        // ---------- Fondo de bienvenida (el area MDI no admite controles, se pinta) ----------
         private void ConstruirBienvenida()
         {
-            // El area MDI no admite controles, asi que el mensaje se dibuja directamente sobre ella
             cliente = Controls.OfType<MdiClient>().FirstOrDefault();
             if (cliente == null) return;
             cliente.BackColor = Estilo.Fondo;
-            cliente.Paint += (s, e) =>
-            {
-                if (MdiChildren.Length > 0) return;
-                using (Font titulo = new Font("Segoe UI Semibold", 22F))
-                using (Font texto = new Font("Segoe UI", 11F))
-                using (SolidBrush oscuro = new SolidBrush(Estilo.Texto))
-                using (SolidBrush gris = new SolidBrush(Estilo.Gris))
-                {
-                    e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
-                    e.Graphics.DrawString("Bienvenido, " + Sesion.NombreCompleto, titulo, oscuro, 48, 48);
-                    e.Graphics.DrawString(
-                        "Usa el menú superior para administrar productos, clientes, facturas y usuarios.\n" +
-                        "Atajos: Ctrl+N nueva factura  ·  Ctrl+R reporte de ventas  ·  Ctrl+L cerrar sesión",
-                        texto, gris, 52, 100);
-                }
-            };
+            QuitarBordeMdi(cliente);
+            cliente.Paint += PintarBienvenida;
             cliente.Resize += (s, e) => cliente.Invalidate();
         }
 
-        private void ActualizarBienvenida()
+        // El area MDI trae un borde hundido del sistema; se quita para que quede plana como el resto
+        [DllImport("user32.dll")] private static extern int GetWindowLong(IntPtr hwnd, int indice);
+        [DllImport("user32.dll")] private static extern int SetWindowLong(IntPtr hwnd, int indice, int valor);
+        [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr hwnd, IntPtr despues, int x, int y, int ancho, int alto, uint flags);
+
+        private static void QuitarBordeMdi(MdiClient mdi)
         {
-            if (cliente != null) cliente.Invalidate();
+            const int GWL_EXSTYLE = -20, WS_EX_CLIENTEDGE = 0x200;
+            const uint SWP_NOSIZE = 0x1, SWP_NOMOVE = 0x2, SWP_NOZORDER = 0x4, SWP_FRAMECHANGED = 0x20;
+            int estilo = GetWindowLong(mdi.Handle, GWL_EXSTYLE);
+            SetWindowLong(mdi.Handle, GWL_EXSTYLE, estilo & ~WS_EX_CLIENTEDGE);
+            SetWindowPos(mdi.Handle, IntPtr.Zero, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED);
+        }
+
+        private void PintarBienvenida(object sender, PaintEventArgs e)
+        {
+            if (MdiChildren.Length > 0) return;
+            Graphics g = e.Graphics;
+            g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
+
+            TextRenderer.DrawText(g, "Bienvenido, " + Sesion.NombreCompleto, new Font("Segoe UI Semilight", 26F), new Point(44, 40), Estilo.Texto, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, "Usa el menú superior o los accesos rápidos para administrar productos, clientes, facturas y usuarios.",
+                Estilo.Normal, new Point(48, 94), Estilo.Gris, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, "Atajos:  Ctrl+N nueva factura   ·   Ctrl+R reporte de ventas   ·   Ctrl+L cerrar sesión",
+                Estilo.Pequena, new Point(48, 122), Estilo.Gris, TextFormatFlags.NoPadding);
+
+            int x = 44, y = 170, ancho = 270;
+            TarjetaResumen.Dibujar(g, new Rectangle(x, y, ancho, 96), Iconos.Productos, "Productos registrados", cifraProductos, Estilo.InfoClaro, Estilo.InfoTexto);
+            TarjetaResumen.Dibujar(g, new Rectangle(x + ancho + 16, y, ancho, 96), Iconos.Clientes, "Clientes registrados", cifraClientes, Estilo.ExitoClaro, Estilo.ExitoOscuro);
+            TarjetaResumen.Dibujar(g, new Rectangle(x + 2 * (ancho + 16), y, ancho, 96), Iconos.Factura, "Facturas emitidas hoy", cifraFacturasHoy, Estilo.AvisoClaro, Estilo.AvisoTexto);
+        }
+
+        // Cifras de la pantalla de bienvenida (se consultan sin bloquear la ventana)
+        private void CargarResumen()
+        {
+            Task.Run(() =>
+            {
+                try
+                {
+                    string productos = Convert.ToInt64(Bd.Escalar("SELECT COUNT(*) FROM Producto")).ToString("N0");
+                    string clientes = Convert.ToInt64(Bd.Escalar("SELECT COUNT(*) FROM Cliente")).ToString("N0");
+                    string hoy = Convert.ToInt64(Bd.Escalar("SELECT COUNT(*) FROM Factura WHERE Fecha >= @h",
+                        Bd.P("@h", DateTime.Today))).ToString("N0");
+                    if (!IsDisposed && IsHandleCreated)
+                        BeginInvoke(new Action(() =>
+                        {
+                            cifraProductos = productos; cifraClientes = clientes; cifraFacturasHoy = hoy;
+                            cliente?.Invalidate();
+                        }));
+                }
+                catch (Exception)
+                {
+                    // Sin conexion: se dejan los guiones
+                }
+            });
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            CargarResumen();
         }
 
         // ---------- Ventanas hijas ----------
@@ -179,14 +253,23 @@ namespace Proyecto_facturas.Formularios
 
             Form hijo = crear();
             hijo.MdiParent = this;
+
+            // Ajusta la ventana al area disponible y la centra
+            Rectangle area = cliente != null ? cliente.ClientRectangle : ClientRectangle;
+            int ancho = Math.Min(hijo.Width, Math.Max(hijo.MinimumSize.Width, area.Width - 32));
+            int alto = Math.Min(hijo.Height, Math.Max(hijo.MinimumSize.Height, area.Height - 32));
+            hijo.StartPosition = FormStartPosition.Manual;
+            hijo.Size = new Size(ancho, alto);
+            hijo.Location = new Point(Math.Max(0, (area.Width - ancho) / 2), Math.Max(0, (area.Height - alto) / 2));
+
             abiertas[clave] = hijo;
             hijo.FormClosed += (s, e) =>
             {
                 abiertas.Remove(clave);
-                BeginInvoke(new Action(ActualizarBienvenida));
+                if (!IsDisposed && IsHandleCreated) BeginInvoke(new Action(() => { cliente?.Invalidate(); CargarResumen(); }));
             };
             hijo.Show();
-            ActualizarBienvenida();
+            cliente?.Invalidate();
         }
 
         private void CerrarTodas()
@@ -197,7 +280,7 @@ namespace Proyecto_facturas.Formularios
         // ---------- Sesion ----------
         private void CerrarSesion()
         {
-            if (!Estilo.Confirmar(this, "¿Quieres cerrar la sesión de " + Sesion.Nombre + "?", "Cerrar sesión")) return;
+            if (!Estilo.Confirmar(this, "Volverás a la pantalla de inicio de sesión. Las ventanas abiertas se cerrarán.", "¿Cerrar la sesión de " + Sesion.Nombre + "?", "Sí, cerrar sesión")) return;
             cerrandoSesion = true;
             Sesion.Cerrar();
             Close();
@@ -206,43 +289,58 @@ namespace Proyecto_facturas.Formularios
         private void FrmPrincipal_FormClosing(object sender, FormClosingEventArgs e)
         {
             if (cerrandoSesion || e.CloseReason != CloseReason.UserClosing) return;
-            if (!Estilo.Confirmar(this, "¿Seguro que quieres salir de la aplicación?", "Salir")) e.Cancel = true;
+            if (!Estilo.Confirmar(this, "Se cerrarán todas las ventanas abiertas.", "¿Salir de la aplicación?", "Sí, salir")) e.Cancel = true;
         }
 
         // ---------- Aspecto del menu ----------
-        private class MenuRenderer : ToolStripProfessionalRenderer
+        private class RenderizadorSuave : ToolStripProfessionalRenderer
         {
-            public MenuRenderer() : base(new Colores()) { RoundedEdges = false; }
+            public RenderizadorSuave() : base(new Colores()) { RoundedEdges = false; }
+
+            protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+            {
+                using (SolidBrush b = new SolidBrush(Color.White)) e.Graphics.FillRectangle(b, e.AffectedBounds);
+            }
 
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
             {
-                Rectangle area = new Rectangle(Point.Empty, e.Item.Size);
-                Color color = e.Item.IsOnDropDown ? Estilo.PrimarioClaro : Estilo.PrimarioOscuro;
-                if (e.Item.Selected || e.Item.Pressed)
-                    using (SolidBrush pincel = new SolidBrush(color))
-                        e.Graphics.FillRectangle(pincel, area);
+                if (!e.Item.Selected && !e.Item.Pressed) return;
+                Graphics g = e.Graphics;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                RectangleF area = e.Item.IsOnDropDown
+                    ? new RectangleF(4, 1, e.Item.Width - 8, e.Item.Height - 2)
+                    : new RectangleF(1, 1, e.Item.Width - 3, e.Item.Height - 2);
+                using (GraphicsPath ruta = Estilo.Redondeado(area, e.Item.IsOnDropDown ? 8 : 10))
+                using (SolidBrush b = new SolidBrush(Estilo.PrimarioClaro))
+                    g.FillPath(b, ruta);
             }
 
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
-                if (e.Item.IsOnDropDown)
-                    e.TextColor = e.Item.Enabled ? Estilo.Texto : Estilo.Gris;
-                else
-                    e.TextColor = Color.White;
+                e.TextColor = e.Item.Enabled ? Estilo.Texto : Estilo.Gris;
                 base.OnRenderItemText(e);
             }
 
             protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
             {
-                using (SolidBrush pincel = new SolidBrush(Color.White))
-                    e.Graphics.FillRectangle(pincel, e.AffectedBounds);
+                using (SolidBrush b = new SolidBrush(Color.White)) e.Graphics.FillRectangle(b, e.AffectedBounds);
+            }
+
+            protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+            {
+                using (Pen p = new Pen(Estilo.Borde))
+                    e.Graphics.DrawLine(p, 12, e.Item.Height / 2, e.Item.Width - 12, e.Item.Height / 2);
             }
 
             protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
             {
-                if (e.ToolStrip is ToolStripDropDown)
-                    using (Pen lapiz = new Pen(Color.FromArgb(209, 213, 219)))
-                        e.Graphics.DrawRectangle(lapiz, new Rectangle(0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1));
+                using (Pen p = new Pen(Estilo.Borde))
+                {
+                    if (e.ToolStrip is ToolStripDropDown)
+                        e.Graphics.DrawRectangle(p, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+                    else
+                        e.Graphics.DrawLine(p, 0, e.ToolStrip.Height - 1, e.ToolStrip.Width, e.ToolStrip.Height - 1);
+                }
             }
         }
 
@@ -252,10 +350,9 @@ namespace Proyecto_facturas.Formularios
             public override Color ImageMarginGradientBegin { get { return Color.White; } }
             public override Color ImageMarginGradientMiddle { get { return Color.White; } }
             public override Color ImageMarginGradientEnd { get { return Color.White; } }
-            public override Color MenuStripGradientBegin { get { return Estilo.Primario; } }
-            public override Color MenuStripGradientEnd { get { return Estilo.Primario; } }
-            public override Color SeparatorDark { get { return Color.FromArgb(229, 231, 235); } }
-            public override Color SeparatorLight { get { return Color.White; } }
+            public override Color MenuStripGradientBegin { get { return Color.White; } }
+            public override Color MenuStripGradientEnd { get { return Color.White; } }
+            public override Color MenuBorder { get { return Estilo.Borde; } }
         }
     }
 }
